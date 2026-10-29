@@ -3,4 +3,5 @@
 //! The binary is a thin CLI over these modules; they are public so the
 //! scanning and project detection can be reused or tested on their own.
 
+pub mod project;
 pub mod util;
