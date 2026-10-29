@@ -1,0 +1,38 @@
+[package]
+name = "porthog"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Find and kill whatever is hogging your dev ports - with the project, framework and uptime of every listener"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["port", "kill", "cli", "tui", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["/.github"]
+
+[dependencies]
+anstream = "1.0.0"
+anstyle = "1.0.14"
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
+clap_complete = "4.6"
+crossterm = "0.29.0"
+dirs = "7.0.0"
+listeners = "0.6.1"
+ratatui = "0.30.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sysinfo = { version = "0.38.4", default-features = false, features = ["system", "user"] }
+toml = "1.2.0"
+unicode-width = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["signal", "process"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
