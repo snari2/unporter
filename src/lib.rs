@@ -5,4 +5,5 @@
 
 pub mod kind;
 pub mod project;
+pub mod scan;
 pub mod util;
