@@ -9,4 +9,5 @@ pub mod kind;
 pub mod output;
 pub mod project;
 pub mod scan;
+pub mod tui;
 pub mod util;

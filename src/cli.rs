@@ -1,6 +1,7 @@
 //! Command-line interface: argument parsing and the subcommands.
 
 use std::collections::HashSet;
+use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -19,6 +20,7 @@ Examples:
   porthog 3000            Show everything about whatever is on :3000
   porthog kill 3000       Stop it (SIGTERM, then SIGKILL after 3s)
   porthog kill 3000-3005 8080 -f
+  porthog tui             Live, interactive view
   porthog free            Print the first free port from 3000 up
   porthog wait 5173 && open http://localhost:5173";
 
@@ -86,6 +88,14 @@ pub enum Command {
         timeout: u64,
     },
 
+    /// Open the interactive, auto-refreshing view
+    #[command(visible_aliases = ["ui", "i"])]
+    Tui {
+        /// Include system services and desktop apps
+        #[arg(short, long)]
+        all: bool,
+    },
+
     /// Print a shell completion script
     Completions {
         shell: clap_complete::Shell,
@@ -130,6 +140,13 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
         (Some(Command::Kill(args)), _) => kill_ports(&args),
         (Some(Command::Free { from, count }), _) => free(from, count),
         (Some(Command::Wait { port, free, timeout }), _) => wait(port, free, timeout),
+        (Some(Command::Tui { all }), _) => {
+            if !std::io::stdout().is_terminal() {
+                bail!("the interactive view needs a terminal; use `porthog list` in scripts");
+            }
+            crate::tui::run(all)?;
+            Ok(ExitCode::SUCCESS)
+        }
         (Some(Command::Completions { shell }), _) => {
             clap_complete::generate(shell, &mut Cli::command(), "porthog", &mut std::io::stdout());
             Ok(ExitCode::SUCCESS)
