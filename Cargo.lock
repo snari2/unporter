@@ -1149,28 +1149,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
-name = "porthog"
-version = "0.1.0"
-dependencies = [
- "anstream",
- "anstyle",
- "anyhow",
- "clap",
- "clap_complete",
- "crossterm",
- "dirs",
- "listeners",
- "nix 0.31.3",
- "ratatui",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "toml",
- "unicode-width",
-]
-
-[[package]]
 name = "powerfmt"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1876,6 +1854,28 @@ name = "unicode-width"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
+
+[[package]]
+name = "unporter"
+version = "0.1.0"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "crossterm",
+ "dirs",
+ "listeners",
+ "nix 0.31.3",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "toml",
+ "unicode-width",
+]
 
 [[package]]
 name = "utf8parse"

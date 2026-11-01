@@ -115,7 +115,7 @@ pub fn plan<'a>(entries: impl IntoIterator<Item = &'a PortEntry>) -> Vec<Action>
         if e.pid <= 1 || e.pid == me {
             skips.push(Action::Skip {
                 reason: format!(
-                    ":{} is held by {} (pid {}), which porthog won't kill",
+                    ":{} is held by {} (pid {}), which unporter won't kill",
                     e.port, e.process, e.pid
                 ),
                 ports: vec![e.port],
@@ -216,7 +216,7 @@ fn signal_process(pid: u32, start_time: Option<u64>, opts: KillOptions) -> Outco
         State::Exited => return Outcome::Gone,
         State::Reused => {
             return Outcome::Failed(format!(
-                "pid {pid} now belongs to a different process; run porthog again"
+                "pid {pid} now belongs to a different process; run unporter again"
             ));
         }
         State::Running => {}

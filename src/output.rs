@@ -60,7 +60,7 @@ pub fn print_table(entries: &[PortEntry], hidden: usize) {
                 plural(hidden)
             );
         } else {
-            println!("Nothing is listening on any TCP port that porthog can see.");
+            println!("Nothing is listening on any TCP port that unporter can see.");
         }
         return;
     }

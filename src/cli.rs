@@ -16,21 +16,21 @@ use crate::scan::{self, PortEntry};
 
 const EXAMPLES: &str = "\
 Examples:
-  porthog                 List dev servers and the projects they belong to
-  porthog 3000            Show everything about whatever is on :3000
-  porthog kill 3000       Stop it (SIGTERM, then SIGKILL after 3s)
-  porthog kill 3000-3005 8080 -f
-  porthog tui             Live, interactive view
-  porthog free            Print the first free port from 3000 up
-  porthog wait 5173 && open http://localhost:5173";
+  unporter                 List dev servers and the projects they belong to
+  unporter 3000            Show everything about whatever is on :3000
+  unporter kill 3000       Stop it (SIGTERM, then SIGKILL after 3s)
+  unporter kill 3000-3005 8080 -f
+  unporter tui             Live, interactive view
+  unporter free            Print the first free port from 3000 up
+  unporter wait 5173 && open http://localhost:5173";
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "porthog",
+    name = "unporter",
     version,
     about = "Find and kill whatever is hogging your dev ports",
     long_about = "Find and kill whatever is hogging your dev ports.\n\n\
-        porthog lists every listening TCP port with the process, framework, project \
+        unporter lists every listening TCP port with the process, framework, project \
         and uptime behind it, and stops it cleanly when you ask.",
     after_help = EXAMPLES,
     args_conflicts_with_subcommands = true
@@ -39,7 +39,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// Show details for one port (same as `porthog info <PORT>`)
+    /// Show details for one port (same as `unporter info <PORT>`)
     #[arg(value_parser = parse_port)]
     pub port: Option<u16>,
 
@@ -147,7 +147,7 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
         ) => wait(port, free, timeout),
         (Some(Command::Tui { all }), _) => {
             if !std::io::stdout().is_terminal() {
-                bail!("the interactive view needs a terminal; use `porthog list` in scripts");
+                bail!("the interactive view needs a terminal; use `unporter list` in scripts");
             }
             crate::tui::run(all)?;
             Ok(ExitCode::SUCCESS)
@@ -156,7 +156,7 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
             clap_complete::generate(
                 shell,
                 &mut Cli::command(),
-                "porthog",
+                "unporter",
                 &mut std::io::stdout(),
             );
             Ok(ExitCode::SUCCESS)
@@ -183,7 +183,7 @@ fn info(port: u16, json: bool) -> Result<ExitCode> {
     } else if entries.is_empty() {
         if scan::is_listening(port) {
             println!(
-                "{PORT}:{port}{PORT:#} is in use, but porthog can't see which process owns it \
+                "{PORT}:{port}{PORT:#} is in use, but unporter can't see which process owns it \
                  {DIM}(it probably belongs to another user; try sudo){DIM:#}"
             );
         } else {
@@ -210,7 +210,7 @@ fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
             targets.extend(on_port);
         } else if scan::is_listening(port) {
             output::error(format!(
-                ":{port} is in use, but porthog can't see which process owns it \
+                ":{port} is in use, but unporter can't see which process owns it \
                  (it probably belongs to another user; try sudo)"
             ));
             failed = true;
@@ -467,12 +467,12 @@ mod tests {
     #[test]
     fn cli_shapes() {
         Cli::command().debug_assert();
-        let cli = Cli::try_parse_from(["porthog", "3000"]).unwrap();
+        let cli = Cli::try_parse_from(["unporter", "3000"]).unwrap();
         assert_eq!(cli.port, Some(3000));
         assert!(cli.command.is_none());
-        let cli = Cli::try_parse_from(["porthog", "--all", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["unporter", "--all", "--json"]).unwrap();
         assert!(cli.list.all && cli.list.json);
-        let cli = Cli::try_parse_from(["porthog", "kill", "3000", ":5173", "-fy"]).unwrap();
+        let cli = Cli::try_parse_from(["unporter", "kill", "3000", ":5173", "-fy"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Kill(KillArgs {
@@ -481,6 +481,6 @@ mod tests {
                 ..
             }))
         ));
-        assert!(Cli::try_parse_from(["porthog", "kill"]).is_err());
+        assert!(Cli::try_parse_from(["unporter", "kill"]).is_err());
     }
 }

@@ -1,4 +1,4 @@
-//! `porthog tui`: a live, interactive view of listening ports.
+//! `unporter tui`: a live, interactive view of listening ports.
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -377,7 +377,10 @@ fn draw(f: &mut Frame, app: &mut App) {
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let visible = app.visible().len();
     let mut spans = vec![
-        Span::styled(" porthog ", Style::new().bg(ACCENT).fg(Color::Black).bold()),
+        Span::styled(
+            " unporter ",
+            Style::new().bg(ACCENT).fg(Color::Black).bold(),
+        ),
         Span::raw("  "),
         Span::raw(if app.loaded {
             format!(

@@ -36,10 +36,10 @@ pub struct PortEntry {
     pub uptime_secs: Option<u64>,
     pub memory_bytes: Option<u64>,
     pub user: Option<String>,
-    /// Owned by the user running porthog.
+    /// Owned by the user running unporter.
     pub mine: bool,
     /// Looks like a development server rather than a system service or
-    /// desktop app. `porthog list` hides the rest unless `--all` is given.
+    /// desktop app. `unporter list` hides the rest unless `--all` is given.
     pub dev: bool,
 }
 
