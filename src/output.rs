@@ -32,7 +32,7 @@ pub fn project_label(e: &PortEntry) -> String {
 pub fn path_label(e: &PortEntry) -> String {
     match (&e.project, &e.cwd) {
         (Some(p), _) => tilde(&p.root),
-        (None, Some(cwd)) if cwd.as_os_str() != "/" => tilde(cwd),
+        (None, Some(cwd)) if !crate::project::is_system_path(cwd) => tilde(cwd),
         _ => "-".to_owned(),
     }
 }

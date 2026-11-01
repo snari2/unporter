@@ -66,6 +66,12 @@ pub fn detect_with_home(cwd: &Path, home: Option<&Path>) -> Option<Project> {
     None
 }
 
+/// True for system and app-data directories (`/usr`, `~/Library`, ...) that
+/// are never user projects.
+pub fn is_system_path(path: &Path) -> bool {
+    path.parent().is_none() || is_ignored(path, dirs::home_dir().as_deref())
+}
+
 /// Directories where processes commonly run that are never user projects.
 fn is_ignored(cwd: &Path, home: Option<&Path>) -> bool {
     const SYSTEM_PREFIXES: &[&str] = &[

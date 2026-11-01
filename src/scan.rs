@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use serde::Serialize;
@@ -268,12 +269,23 @@ fn enrich(groups: Vec<Group>) -> Vec<PortEntry> {
     entries
 }
 
+/// When `docker ps` last failed or hung. A wedged Docker daemon would
+/// otherwise stall every refresh of the TUI.
+static DOCKER_FAILED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+const DOCKER_TIMEOUT: Duration = Duration::from_millis(800);
+const DOCKER_BACKOFF: Duration = Duration::from_secs(30);
+
 /// Host port -> container name for running Docker containers.
 fn docker_containers() -> HashMap<u16, String> {
+    let mut failed_at = DOCKER_FAILED_AT.lock().unwrap_or_else(|e| e.into_inner());
+    if failed_at.is_some_and(|t| t.elapsed() < DOCKER_BACKOFF) {
+        return HashMap::new();
+    }
     let out = util::output_with_timeout(
         Command::new("docker").args(["ps", "--format", "{{.Names}}\t{{.Ports}}"]),
-        Duration::from_secs(3),
+        DOCKER_TIMEOUT,
     );
+    *failed_at = out.is_none().then(Instant::now);
     out.map(|o| parse_docker_ps(&o)).unwrap_or_default()
 }
 
