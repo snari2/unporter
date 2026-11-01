@@ -75,18 +75,35 @@ pub fn print_table(entries: &[PortEntry], hidden: usize) {
         col("PORT", PORT, Shrink::No, &|e| e.port.to_string()),
         col("PID", Style::new(), Shrink::No, &|e| e.pid.to_string()),
         col("PROCESS", BOLD, Shrink::Right, &|e| e.process.clone()),
-        col("KIND", KIND, Shrink::Right, &|e| e.kind.unwrap_or("-").to_owned()),
+        col("KIND", KIND, Shrink::Right, &|e| {
+            e.kind.unwrap_or("-").to_owned()
+        }),
         col("PROJECT", PROJECT, Shrink::Right, &project_label),
         col("PATH", DIM, Shrink::Left, &path_label),
         col("BIND", Style::new(), Shrink::No, &PortEntry::bind_label),
-        col("UPTIME", Style::new(), Shrink::No, &|e| e.uptime_secs.map(human_duration).unwrap_or_else(|| "-".into())),
-        col("MEM", Style::new(), Shrink::No, &|e| e.memory_bytes.map(human_bytes).unwrap_or_else(|| "-".into())),
+        col("UPTIME", Style::new(), Shrink::No, &|e| {
+            e.uptime_secs
+                .map(human_duration)
+                .unwrap_or_else(|| "-".into())
+        }),
+        col("MEM", Style::new(), Shrink::No, &|e| {
+            e.memory_bytes
+                .map(human_bytes)
+                .unwrap_or_else(|| "-".into())
+        }),
     ];
 
     let gap = 2;
     let mut widths: Vec<usize> = columns
         .iter()
-        .map(|c| c.cells.iter().map(|s| width(s)).chain([c.title.len()]).max().unwrap_or(0))
+        .map(|c| {
+            c.cells
+                .iter()
+                .map(|s| width(s))
+                .chain([c.title.len()])
+                .max()
+                .unwrap_or(0)
+        })
         .collect();
     if let Some(term) = terminal_width() {
         fit_widths(&columns, &mut widths, term, gap);
@@ -150,22 +167,40 @@ pub fn print_details(entries: &[PortEntry]) {
         if i > 0 {
             println!();
         }
-        let kind = e.kind.map(|k| format!(" · {KIND}{k}{KIND:#}")).unwrap_or_default();
-        println!("{PORT}:{}{PORT:#}  {BOLD}{}{BOLD:#}{kind}", e.port, e.process);
+        let kind = e
+            .kind
+            .map(|k| format!(" · {KIND}{k}{KIND:#}"))
+            .unwrap_or_default();
+        println!(
+            "{PORT}:{}{PORT:#}  {BOLD}{}{BOLD:#}{kind}",
+            e.port, e.process
+        );
         let row = |label: &str, value: String| println!("  {DIM}{label:<9}{DIM:#} {value}");
         row("pid", e.pid.to_string());
         if let Some(pp) = e.parent_pid {
-            let cmd = e.parent_command.as_deref().map(|c| format!(" {DIM}{}{DIM:#}", truncate_right(c, 100))).unwrap_or_default();
+            let cmd = e
+                .parent_command
+                .as_deref()
+                .map(|c| format!(" {DIM}{}{DIM:#}", truncate_right(c, 100)))
+                .unwrap_or_default();
             row("parent", format!("{pp}{cmd}"));
         }
         row("command", e.command_line());
         if let Some(c) = &e.container {
-            row("container", format!("{PROJECT}{c}{PROJECT:#} {DIM}(docker stop {c}){DIM:#}"));
+            row(
+                "container",
+                format!("{PROJECT}{c}{PROJECT:#} {DIM}(docker stop {c}){DIM:#}"),
+            );
         }
         if let Some(p) = &e.project {
             row(
                 "project",
-                format!("{PROJECT}{}{PROJECT:#} {DIM}{} ({}){DIM:#}", p.name, tilde(&p.root), p.marker),
+                format!(
+                    "{PROJECT}{}{PROJECT:#} {DIM}{} ({}){DIM:#}",
+                    p.name,
+                    tilde(&p.root),
+                    p.marker
+                ),
             );
         }
         if let Some(cwd) = &e.cwd {

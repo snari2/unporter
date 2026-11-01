@@ -33,7 +33,9 @@ pub enum Action {
 impl Action {
     pub fn ports(&self) -> &[u16] {
         match self {
-            Action::Signal { ports, .. } | Action::DockerStop { ports, .. } | Action::Skip { ports, .. } => ports,
+            Action::Signal { ports, .. }
+            | Action::DockerStop { ports, .. }
+            | Action::Skip { ports, .. } => ports,
         }
     }
 
@@ -80,7 +82,10 @@ pub enum Outcome {
 
 impl Outcome {
     pub fn is_success(&self) -> bool {
-        matches!(self, Outcome::Exited | Outcome::Killed | Outcome::Gone | Outcome::Stopped)
+        matches!(
+            self,
+            Outcome::Exited | Outcome::Killed | Outcome::Gone | Outcome::Stopped
+        )
     }
 }
 
@@ -109,7 +114,10 @@ pub fn plan<'a>(entries: impl IntoIterator<Item = &'a PortEntry>) -> Vec<Action>
         }
         if e.pid <= 1 || e.pid == me {
             skips.push(Action::Skip {
-                reason: format!(":{} is held by {} (pid {}), which porthog won't kill", e.port, e.process, e.pid),
+                reason: format!(
+                    ":{} is held by {} (pid {}), which porthog won't kill",
+                    e.port, e.process, e.pid
+                ),
                 ports: vec![e.port],
             });
             continue;
@@ -144,7 +152,9 @@ fn push_port(ports: &mut Vec<u16>, port: u16) {
 
 pub fn execute(action: &Action, opts: KillOptions) -> Outcome {
     match action {
-        Action::Signal { pid, start_time, .. } => signal_process(*pid, *start_time, opts),
+        Action::Signal {
+            pid, start_time, ..
+        } => signal_process(*pid, *start_time, opts),
         Action::DockerStop { container, .. } => docker_stop(container),
         Action::Skip { reason, .. } => Outcome::Skipped(reason.clone()),
     }
@@ -170,10 +180,16 @@ enum State {
 
 fn state(sys: &mut System, pid: u32, start_time: Option<u64>) -> State {
     let spid = Pid::from_u32(pid);
-    sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[spid]), true, ProcessRefreshKind::nothing());
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[spid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
     match sys.process(spid) {
         None => State::Exited,
-        Some(p) if matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead) => State::Exited,
+        Some(p) if matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead) => {
+            State::Exited
+        }
         Some(p) => match start_time {
             Some(t) if p.start_time() != t => State::Reused,
             _ => State::Running,
@@ -199,7 +215,9 @@ fn signal_process(pid: u32, start_time: Option<u64>, opts: KillOptions) -> Outco
     match state(&mut sys, pid, start_time) {
         State::Exited => return Outcome::Gone,
         State::Reused => {
-            return Outcome::Failed(format!("pid {pid} now belongs to a different process; run porthog again"));
+            return Outcome::Failed(format!(
+                "pid {pid} now belongs to a different process; run porthog again"
+            ));
         }
         State::Running => {}
     }
@@ -208,7 +226,11 @@ fn signal_process(pid: u32, start_time: Option<u64>, opts: KillOptions) -> Outco
     if let Err(outcome) = send(&sys, pid, first) {
         return outcome;
     }
-    let grace = if opts.force { Duration::from_secs(2) } else { opts.timeout };
+    let grace = if opts.force {
+        Duration::from_secs(2)
+    } else {
+        opts.timeout
+    };
     if wait_for_exit(&mut sys, pid, start_time, grace) {
         return Outcome::Exited;
     }
@@ -302,12 +324,24 @@ mod tests {
         let mut orphan = pg1.clone();
         orphan.port = 9999;
         orphan.container = None;
-        let entries = [entry(3000, 42), entry(3001, 42), entry(5173, 43), pg1, pg2, orphan, entry(80, 1)];
+        let entries = [
+            entry(3000, 42),
+            entry(3001, 42),
+            entry(5173, 43),
+            pg1,
+            pg2,
+            orphan,
+            entry(80, 1),
+        ];
         let actions = plan(&entries);
         assert_eq!(actions.len(), 5);
-        assert!(matches!(&actions[0], Action::Signal { pid: 42, ports, .. } if ports == &[3000, 3001]));
+        assert!(
+            matches!(&actions[0], Action::Signal { pid: 42, ports, .. } if ports == &[3000, 3001])
+        );
         assert!(matches!(&actions[1], Action::Signal { pid: 43, .. }));
-        assert!(matches!(&actions[2], Action::DockerStop { container, ports } if container == "pg" && ports == &[5432, 5433]));
+        assert!(
+            matches!(&actions[2], Action::DockerStop { container, ports } if container == "pg" && ports == &[5432, 5433])
+        );
         assert!(matches!(&actions[3], Action::Skip { ports, .. } if ports == &[9999]));
         assert!(matches!(&actions[4], Action::Skip { ports, .. } if ports == &[80]));
     }
@@ -328,7 +362,10 @@ mod tests {
         let outcome = signal_process(pid, None, KillOptions::default());
         assert_eq!(outcome, Outcome::Exited);
         reaper.join().unwrap().unwrap();
-        assert_eq!(signal_process(pid, None, KillOptions::default()), Outcome::Gone);
+        assert_eq!(
+            signal_process(pid, None, KillOptions::default()),
+            Outcome::Gone
+        );
     }
 
     #[cfg(unix)]

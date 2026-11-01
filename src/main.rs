@@ -19,6 +19,9 @@ fn reset_sigpipe() {
     #[cfg(unix)]
     // SAFETY: called once at startup before any other threads exist.
     unsafe {
-        let _ = nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigDfl);
+        let _ = nix::sys::signal::signal(
+            nix::sys::signal::Signal::SIGPIPE,
+            nix::sys::signal::SigHandler::SigDfl,
+        );
     }
 }

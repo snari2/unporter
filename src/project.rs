@@ -184,12 +184,20 @@ mod tests {
 
         let p = tmp.path().join("p");
         fs::create_dir_all(&p).unwrap();
-        fs::write(p.join("pyproject.toml"), "[tool.poetry]\nname = \"flaskapp\"\n").unwrap();
+        fs::write(
+            p.join("pyproject.toml"),
+            "[tool.poetry]\nname = \"flaskapp\"\n",
+        )
+        .unwrap();
         assert_eq!(detect_with_home(&p, None).unwrap().name, "flaskapp");
 
         let g = tmp.path().join("g");
         fs::create_dir_all(&g).unwrap();
-        fs::write(g.join("go.mod"), "module github.com/acme/gosvc\n\ngo 1.22\n").unwrap();
+        fs::write(
+            g.join("go.mod"),
+            "module github.com/acme/gosvc\n\ngo 1.22\n",
+        )
+        .unwrap();
         assert_eq!(detect_with_home(&g, None).unwrap().name, "gosvc");
     }
 
@@ -217,7 +225,10 @@ mod tests {
         assert_eq!(detect_with_home(&home.join("Downloads"), Some(&home)), None);
         fs::create_dir_all(home.join("Library/App")).unwrap();
         fs::write(home.join("Library/App/package.json"), "{}").unwrap();
-        assert_eq!(detect_with_home(&home.join("Library/App"), Some(&home)), None);
+        assert_eq!(
+            detect_with_home(&home.join("Library/App"), Some(&home)),
+            None
+        );
     }
 
     #[test]

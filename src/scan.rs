@@ -202,7 +202,12 @@ fn enrich(groups: Vec<Group>) -> Vec<PortEntry> {
         .map(|g| {
             let proc = sys.process(Pid::from_u32(g.pid));
             let command: Vec<String> = proc
-                .map(|p| p.cmd().iter().map(|a| a.to_string_lossy().into_owned()).collect())
+                .map(|p| {
+                    p.cmd()
+                        .iter()
+                        .map(|a| a.to_string_lossy().into_owned())
+                        .collect()
+                })
                 .unwrap_or_default();
             let process = proc
                 .map(|p| p.name().to_string_lossy().into_owned())
@@ -226,7 +231,11 @@ fn enrich(groups: Vec<Group>) -> Vec<PortEntry> {
             let uid = proc.and_then(|p| p.user_id());
             let parent_pid = proc.and_then(|p| p.parent());
             let parent_command = parent_pid.and_then(|pp| sys.process(pp)).map(|pp| {
-                let cmd: Vec<String> = pp.cmd().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+                let cmd: Vec<String> = pp
+                    .cmd()
+                    .iter()
+                    .map(|a| a.to_string_lossy().into_owned())
+                    .collect();
                 if cmd.is_empty() {
                     pp.name().to_string_lossy().into_owned()
                 } else {
@@ -324,9 +333,12 @@ pub fn parse_docker_ps(output: &str) -> HashMap<u16, String> {
 /// True if something accepts TCP connections on localhost:`port` (IPv4 or IPv6).
 pub fn is_listening(port: u16) -> bool {
     let timeout = Duration::from_millis(150);
-    [IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)]
-        .into_iter()
-        .any(|ip| TcpStream::connect_timeout(&SocketAddr::new(ip, port), timeout).is_ok())
+    [
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(Ipv6Addr::LOCALHOST),
+    ]
+    .into_iter()
+    .any(|ip| TcpStream::connect_timeout(&SocketAddr::new(ip, port), timeout).is_ok())
 }
 
 /// True if a dev server could bind `port` on localhost right now.
@@ -366,7 +378,10 @@ mod tests {
             raw(3000, 21, "::"),
             raw(0, 30, "0.0.0.0"),
         ]);
-        let keys: Vec<_> = groups.iter().map(|g| (g.port, g.pid, g.addrs.len())).collect();
+        let keys: Vec<_> = groups
+            .iter()
+            .map(|g| (g.port, g.pid, g.addrs.len()))
+            .collect();
         assert_eq!(keys, vec![(3000, 20, 1), (3000, 21, 1), (5173, 10, 2)]);
     }
 
@@ -439,7 +454,10 @@ mod tests {
         let port = l.local_addr().unwrap().port();
         let entries = scan_port(port).expect("scan works");
         let me = std::process::id();
-        let e = entries.iter().find(|e| e.pid == me).expect("own listener visible");
+        let e = entries
+            .iter()
+            .find(|e| e.pid == me)
+            .expect("own listener visible");
         assert!(e.mine);
         assert_eq!(e.bind_label(), "localhost");
         assert!(e.start_time.is_some());

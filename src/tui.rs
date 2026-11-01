@@ -7,11 +7,11 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::DefaultTerminal;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap};
-use ratatui::Frame;
 
 use crate::kill::{self, Action, KillOptions, Outcome};
 use crate::output::{path_label, project_label};
@@ -110,7 +110,11 @@ fn run_actions(actions: &[Action], opts: KillOptions) -> (String, bool) {
 }
 
 fn ports_label(ports: &[u16]) -> String {
-    ports.iter().map(|p| format!(":{p}")).collect::<Vec<_>>().join(" ")
+    ports
+        .iter()
+        .map(|p| format!(":{p}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn event_loop(
@@ -135,7 +139,11 @@ fn event_loop(
         while let Ok(msg) = messages.try_recv() {
             app.handle_message(msg);
         }
-        if app.status.as_ref().is_some_and(|(_, _, at)| at.elapsed() > STATUS_FOR) {
+        if app
+            .status
+            .as_ref()
+            .is_some_and(|(_, _, at)| at.elapsed() > STATUS_FOR)
+        {
             app.status = None;
         }
         terminal.draw(|f| draw(f, &mut app))?;
@@ -244,12 +252,16 @@ impl App {
                 }
                 _ => {}
             },
-            Mode::Confirm { actions, .. } if actions.iter().all(|a| matches!(a, Action::Skip { .. })) => {
+            Mode::Confirm { actions, .. }
+                if actions.iter().all(|a| matches!(a, Action::Skip { .. })) =>
+            {
                 self.mode = Mode::Normal;
             }
             Mode::Confirm { .. } => match key.code {
                 KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
-                    let Mode::Confirm { actions, force } = std::mem::replace(&mut self.mode, Mode::Normal) else {
+                    let Mode::Confirm { actions, force } =
+                        std::mem::replace(&mut self.mode, Mode::Normal)
+                    else {
                         unreachable!()
                     };
                     let opts = KillOptions {
@@ -283,7 +295,9 @@ impl App {
                         let url = e.url();
                         match util::open_url(&url) {
                             Ok(()) => self.set_status(format!("opened {url}"), true),
-                            Err(err) => self.set_status(format!("could not open {url}: {err}"), false),
+                            Err(err) => {
+                                self.set_status(format!("could not open {url}: {err}"), false)
+                            }
                         }
                     }
                 }
@@ -368,7 +382,11 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         Span::raw(if app.loaded {
             format!(
                 "{visible} {}",
-                if app.show_all { "listeners" } else { "dev servers" }
+                if app.show_all {
+                    "listeners"
+                } else {
+                    "dev servers"
+                }
             )
         } else {
             "scanning…".to_owned()
@@ -376,11 +394,17 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     ];
     let hidden = app.hidden_count();
     if !app.show_all && hidden > 0 {
-        spans.push(Span::styled(format!("  ({hidden} hidden, press a)"), Style::new().dim()));
+        spans.push(Span::styled(
+            format!("  ({hidden} hidden, press a)"),
+            Style::new().dim(),
+        ));
     }
     if !app.filter.is_empty() || app.mode == Mode::Filter {
         spans.push(Span::raw("  filter: "));
-        spans.push(Span::styled(app.filter.clone(), Style::new().fg(Color::Yellow)));
+        spans.push(Span::styled(
+            app.filter.clone(),
+            Style::new().fg(Color::Yellow),
+        ));
         if app.mode == Mode::Filter {
             spans.push(Span::styled("▏", Style::new().fg(Color::Yellow)));
         }
@@ -393,7 +417,11 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
     let rows: Vec<Row> = visible
         .iter()
         .map(|e| {
-            let base = if e.dev { Style::new() } else { Style::new().dim() };
+            let base = if e.dev {
+                Style::new()
+            } else {
+                Style::new().dim()
+            };
             Row::new(vec![
                 Cell::from(e.port.to_string()).style(Style::new().fg(ACCENT).bold()),
                 Cell::from(e.pid.to_string()),
@@ -401,8 +429,16 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
                 Cell::from(e.kind.unwrap_or("-")).fg(Color::Magenta),
                 Cell::from(project_label(e)).fg(Color::Green),
                 Cell::from(e.bind_label()),
-                Cell::from(e.uptime_secs.map(human_duration).unwrap_or_else(|| "-".into())),
-                Cell::from(e.memory_bytes.map(human_bytes).unwrap_or_else(|| "-".into())),
+                Cell::from(
+                    e.uptime_secs
+                        .map(human_duration)
+                        .unwrap_or_else(|| "-".into()),
+                ),
+                Cell::from(
+                    e.memory_bytes
+                        .map(human_bytes)
+                        .unwrap_or_else(|| "-".into()),
+                ),
             ])
             .style(base)
         })
@@ -418,11 +454,17 @@ fn draw_table(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Length(8),
         Constraint::Length(9),
     ];
-    let header = Row::new(["PORT", "PID", "PROCESS", "KIND", "PROJECT", "BIND", "UPTIME", "MEM"])
-        .style(Style::new().bold().underlined());
+    let header = Row::new([
+        "PORT", "PID", "PROCESS", "KIND", "PROJECT", "BIND", "UPTIME", "MEM",
+    ])
+    .style(Style::new().bold().underlined());
     let table = Table::new(rows, widths)
         .header(header)
-        .row_highlight_style(Style::new().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .row_highlight_style(
+            Style::new()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("▶ ")
         .block(Block::bordered().title(" ports "));
     f.render_stateful_widget(table, area, &mut app.table);
@@ -445,38 +487,65 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
         return;
     };
     let label = |s: &'static str| Span::styled(format!("{s:<9}"), Style::new().dim());
-    let mut lines = vec![Line::from(vec![label("command"), Span::raw(e.command_line())])];
+    let mut lines = vec![Line::from(vec![
+        label("command"),
+        Span::raw(e.command_line()),
+    ])];
     if let Some(c) = &e.container {
-        lines.push(Line::from(vec![label("container"), Span::raw(c.clone()).fg(Color::Green)]));
+        lines.push(Line::from(vec![
+            label("container"),
+            Span::raw(c.clone()).fg(Color::Green),
+        ]));
     }
     if let Some(p) = &e.project {
         lines.push(Line::from(vec![
             label("project"),
             Span::raw(p.name.clone()).fg(Color::Green),
-            Span::styled(format!("  {} ({})", tilde(&p.root), p.marker), Style::new().dim()),
+            Span::styled(
+                format!("  {} ({})", tilde(&p.root), p.marker),
+                Style::new().dim(),
+            ),
         ]));
     } else if let Some(cwd) = &e.cwd {
         lines.push(Line::from(vec![label("cwd"), Span::raw(tilde(cwd))]));
     }
     if let (Some(pp), Some(cmd)) = (e.parent_pid, &e.parent_command) {
-        lines.push(Line::from(vec![label("parent"), Span::raw(format!("{pp}  {cmd}"))]));
+        lines.push(Line::from(vec![
+            label("parent"),
+            Span::raw(format!("{pp}  {cmd}")),
+        ]));
     }
     let addrs: Vec<String> = e.addresses.iter().map(|a| a.to_string()).collect();
-    let mut listen = vec![label("listen"), Span::raw(addrs.join(", ")), Span::styled(format!("   {}", e.url()), Style::new().fg(ACCENT))];
+    let mut listen = vec![
+        label("listen"),
+        Span::raw(addrs.join(", ")),
+        Span::styled(format!("   {}", e.url()), Style::new().fg(ACCENT)),
+    ];
     if e.addresses.iter().any(|a| !a.is_loopback()) {
-        listen.push(Span::styled("   reachable from other machines", Style::new().fg(Color::Yellow)));
+        listen.push(Span::styled(
+            "   reachable from other machines",
+            Style::new().fg(Color::Yellow),
+        ));
     }
     lines.push(Line::from(listen));
     if let Some(u) = &e.user {
         lines.push(Line::from(vec![label("user"), Span::raw(u.clone())]));
     }
-    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).block(block), area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(block),
+        area,
+    );
 }
 
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     if let Some((text, ok, _)) = &app.status {
         let color = if *ok { Color::Green } else { Color::Red };
-        f.render_widget(Line::styled(format!(" {text}"), Style::new().fg(color)), area);
+        f.render_widget(
+            Line::styled(format!(" {text}"), Style::new().fg(color)),
+            area,
+        );
         return;
     }
     let keys: &[(&str, &str)] = match app.mode {
@@ -501,19 +570,26 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn popup(f: &mut Frame, width: u16, height: u16) -> Rect {
-    let area = f
-        .area()
-        .centered(Constraint::Length(width.min(f.area().width)), Constraint::Length(height.min(f.area().height)));
+    let area = f.area().centered(
+        Constraint::Length(width.min(f.area().width)),
+        Constraint::Length(height.min(f.area().height)),
+    );
     f.render_widget(Clear, area);
     area
 }
 
 fn draw_confirm(f: &mut Frame, actions: &[Action], force: bool) {
-    let verb = if force { "Force kill (SIGKILL)" } else { "Stop" };
+    let verb = if force {
+        "Force kill (SIGKILL)"
+    } else {
+        "Stop"
+    };
     let mut lines = Vec::new();
     for a in actions {
         lines.push(match a {
-            Action::Skip { reason, .. } => Line::styled(format!("✗ {reason}"), Style::new().fg(Color::Yellow)),
+            Action::Skip { reason, .. } => {
+                Line::styled(format!("✗ {reason}"), Style::new().fg(Color::Yellow))
+            }
             _ => Line::from(vec![
                 Span::raw(format!("{verb} ")),
                 Span::styled(a.describe(), Style::new().bold()),
@@ -537,9 +613,11 @@ fn draw_confirm(f: &mut Frame, actions: &[Action], force: bool) {
     let area = popup(f, 72, height);
     let title = if force { " force kill " } else { " kill " };
     f.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: true })
-            .block(Block::bordered().title(title).border_style(Style::new().fg(Color::Red))),
+        Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+            Block::bordered()
+                .title(title)
+                .border_style(Style::new().fg(Color::Red)),
+        ),
         area,
     );
 }
@@ -547,7 +625,10 @@ fn draw_confirm(f: &mut Frame, actions: &[Action], force: bool) {
 fn draw_help(f: &mut Frame) {
     let rows = [
         ("↑/k ↓/j", "move selection (g/G: first/last)"),
-        ("x d Del", "stop the selected process (SIGTERM, then SIGKILL after 3s)"),
+        (
+            "x d Del",
+            "stop the selected process (SIGTERM, then SIGKILL after 3s)",
+        ),
         ("X D", "force kill immediately (SIGKILL)"),
         ("o Enter", "open http://localhost:<port> in your browser"),
         ("/", "filter by port, process, framework or project"),
@@ -565,5 +646,8 @@ fn draw_help(f: &mut Frame) {
         })
         .collect();
     let area = popup(f, 70, lines.len() as u16 + 2);
-    f.render_widget(Paragraph::new(lines).block(Block::bordered().title(" keys ")), area);
+    f.render_widget(
+        Paragraph::new(lines).block(Block::bordered().title(" keys ")),
+        area,
+    );
 }

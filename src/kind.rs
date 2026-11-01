@@ -87,7 +87,9 @@ const RUNTIMES: &[(&str, &str)] = &[
 pub fn detect(process_name: &str, cmd: &[String]) -> Option<&'static str> {
     let head = [
         normalize(process_name),
-        cmd.first().map(|a| normalize(basename(a))).unwrap_or_default(),
+        cmd.first()
+            .map(|a| normalize(basename(a)))
+            .unwrap_or_default(),
     ];
     for (bin, kind) in DAEMONS {
         if head.iter().any(|h| h == bin || is_versioned(h, bin)) {
@@ -113,8 +115,9 @@ pub fn detect(process_name: &str, cmd: &[String]) -> Option<&'static str> {
 
 /// `python3.12` or `node22` count as `python` / `node`.
 fn is_versioned(head: &str, bin: &str) -> bool {
-    head.strip_prefix(bin)
-        .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.'))
+    head.strip_prefix(bin).is_some_and(|rest| {
+        !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+    })
 }
 
 fn is_cargo_target(path: &str) -> bool {
@@ -167,22 +170,64 @@ mod tests {
 
     #[test]
     fn js_frameworks() {
-        assert_eq!(d("node", "node /app/node_modules/.bin/next dev"), Some("Next.js"));
-        assert_eq!(d("next-server (v15.1.0)", "next-server (v15.1.0)"), Some("Next.js"));
-        assert_eq!(d("node", "node /app/node_modules/vite/bin/vite.js --port 5173"), Some("Vite"));
-        assert_eq!(d("node", "node /app/node_modules/react-scripts/scripts/start.js"), Some("Create React App"));
+        assert_eq!(
+            d("node", "node /app/node_modules/.bin/next dev"),
+            Some("Next.js")
+        );
+        assert_eq!(
+            d("next-server (v15.1.0)", "next-server (v15.1.0)"),
+            Some("Next.js")
+        );
+        assert_eq!(
+            d(
+                "node",
+                "node /app/node_modules/vite/bin/vite.js --port 5173"
+            ),
+            Some("Vite")
+        );
+        assert_eq!(
+            d(
+                "node",
+                "node /app/node_modules/react-scripts/scripts/start.js"
+            ),
+            Some("Create React App")
+        );
         assert_eq!(d("node", "node /x/.bin/nodemon index.js"), Some("nodemon"));
-        assert_eq!(d("node", "node /x/@angular/cli/bin/ng serve"), Some("Angular"));
+        assert_eq!(
+            d("node", "node /x/@angular/cli/bin/ng serve"),
+            Some("Angular")
+        );
     }
 
     #[test]
     fn python_and_others() {
         assert_eq!(d("Python", "/usr/bin/python3 -m flask run"), Some("Flask"));
-        assert_eq!(d("python3.12", "python3.12 manage.py runserver"), Some("Django"));
-        assert_eq!(d("Python", "python3 -m http.server 8080"), Some("http.server"));
-        assert_eq!(d("uvicorn", "/venv/bin/uvicorn main:app --reload"), Some("Uvicorn"));
-        assert_eq!(d("postgres", "/opt/homebrew/opt/postgresql@16/bin/postgres -D /x"), Some("PostgreSQL"));
-        assert_eq!(d("com.docker.backend", "/Applications/Docker.app/Contents/MacOS/com.docker.backend"), Some("Docker"));
+        assert_eq!(
+            d("python3.12", "python3.12 manage.py runserver"),
+            Some("Django")
+        );
+        assert_eq!(
+            d("Python", "python3 -m http.server 8080"),
+            Some("http.server")
+        );
+        assert_eq!(
+            d("uvicorn", "/venv/bin/uvicorn main:app --reload"),
+            Some("Uvicorn")
+        );
+        assert_eq!(
+            d(
+                "postgres",
+                "/opt/homebrew/opt/postgresql@16/bin/postgres -D /x"
+            ),
+            Some("PostgreSQL")
+        );
+        assert_eq!(
+            d(
+                "com.docker.backend",
+                "/Applications/Docker.app/Contents/MacOS/com.docker.backend"
+            ),
+            Some("Docker")
+        );
     }
 
     #[test]
@@ -196,7 +241,13 @@ mod tests {
     #[test]
     fn no_false_positives_from_substrings() {
         assert_eq!(d("invite-service", "/srv/invite-service --port 9000"), None);
-        assert_eq!(d("Spotify", "/Applications/Spotify.app/Contents/MacOS/Spotify"), None);
+        assert_eq!(
+            d(
+                "Spotify",
+                "/Applications/Spotify.app/Contents/MacOS/Spotify"
+            ),
+            None
+        );
         assert_eq!(d("nodeweaver", "nodeweaver"), None);
         assert_eq!(d("node", "node app.js --db postgres"), Some("Node.js"));
         assert_eq!(d("hugo", "hugo serve"), Some("Hugo"));

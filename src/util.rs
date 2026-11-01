@@ -190,9 +190,18 @@ mod tests {
             output_with_timeout(Command::new("echo").arg("hi"), Duration::from_secs(5)).as_deref(),
             Some("hi\n")
         );
-        assert_eq!(output_with_timeout(&mut Command::new("definitely-not-a-real-binary"), Duration::from_secs(1)), None);
+        assert_eq!(
+            output_with_timeout(
+                &mut Command::new("definitely-not-a-real-binary"),
+                Duration::from_secs(1)
+            ),
+            None
+        );
         let start = Instant::now();
-        assert_eq!(output_with_timeout(Command::new("sleep").arg("5"), Duration::from_millis(200)), None);
+        assert_eq!(
+            output_with_timeout(Command::new("sleep").arg("5"), Duration::from_millis(200)),
+            None
+        );
         assert!(start.elapsed() < Duration::from_secs(2));
     }
 }

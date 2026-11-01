@@ -97,9 +97,7 @@ pub enum Command {
     },
 
     /// Print a shell completion script
-    Completions {
-        shell: clap_complete::Shell,
-    },
+    Completions { shell: clap_complete::Shell },
 }
 
 #[derive(Debug, Args, Default)]
@@ -139,7 +137,14 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
         (None, None) => list(&cli.list),
         (Some(Command::Kill(args)), _) => kill_ports(&args),
         (Some(Command::Free { from, count }), _) => free(from, count),
-        (Some(Command::Wait { port, free, timeout }), _) => wait(port, free, timeout),
+        (
+            Some(Command::Wait {
+                port,
+                free,
+                timeout,
+            }),
+            _,
+        ) => wait(port, free, timeout),
         (Some(Command::Tui { all }), _) => {
             if !std::io::stdout().is_terminal() {
                 bail!("the interactive view needs a terminal; use `porthog list` in scripts");
@@ -148,7 +153,12 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         (Some(Command::Completions { shell }), _) => {
-            clap_complete::generate(shell, &mut Cli::command(), "porthog", &mut std::io::stdout());
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "porthog",
+                &mut std::io::stdout(),
+            );
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -182,7 +192,11 @@ fn info(port: u16, json: bool) -> Result<ExitCode> {
     } else {
         output::print_details(&entries);
     }
-    Ok(if entries.is_empty() { ExitCode::FAILURE } else { ExitCode::SUCCESS })
+    Ok(if entries.is_empty() {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
@@ -209,14 +223,21 @@ fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
     }
 
     let actions = kill::plan(targets.iter().copied());
-    let runnable: Vec<&Action> = actions.iter().filter(|a| !matches!(a, Action::Skip { .. })).collect();
+    let runnable: Vec<&Action> = actions
+        .iter()
+        .filter(|a| !matches!(a, Action::Skip { .. }))
+        .collect();
     for action in &actions {
         match action {
             Action::Skip { reason, .. } => {
                 output::warn(reason);
                 failed = true;
             }
-            _ => println!("{} {}", if args.dry_run { "would stop" } else { "→" }, describe(action, &targets)),
+            _ => println!(
+                "{} {}",
+                if args.dry_run { "would stop" } else { "→" },
+                describe(action, &targets)
+            ),
         }
     }
     if args.dry_run || runnable.is_empty() {
@@ -233,11 +254,16 @@ fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
     });
     if risky && !args.yes {
         if !output::interactive() {
-            output::error("some of these don't look like dev servers; pass --yes to stop them anyway");
+            output::error(
+                "some of these don't look like dev servers; pass --yes to stop them anyway",
+            );
             return Ok(ExitCode::FAILURE);
         }
         let n = runnable.len();
-        if !output::confirm(&format!("Some of these aren't dev servers. Stop {n} process{}?", if n == 1 { "" } else { "es" })) {
+        if !output::confirm(&format!(
+            "Some of these aren't dev servers. Stop {n} process{}?",
+            if n == 1 { "" } else { "es" }
+        )) {
             eprintln!("Aborted.");
             return Ok(ExitCode::FAILURE);
         }
@@ -253,7 +279,10 @@ fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
         let ports = ports_label(action.ports());
         match &outcome {
             Outcome::Exited | Outcome::Stopped => {
-                println!("{OK}✔{OK:#} stopped {} {DIM}— freed {ports}{DIM:#}", action.describe());
+                println!(
+                    "{OK}✔{OK:#} stopped {} {DIM}— freed {ports}{DIM:#}",
+                    action.describe()
+                );
             }
             Outcome::Killed => println!(
                 "{OK}✔{OK:#} {} ignored SIGTERM, sent SIGKILL {DIM}— freed {ports}{DIM:#}",
@@ -288,7 +317,11 @@ fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
 
 fn describe(action: &Action, targets: &[&PortEntry]) -> String {
     let entry = targets.iter().find(|e| action.ports().contains(&e.port));
-    let mut s = format!("{BOLD}{}{BOLD:#} on {}", action.describe(), ports_label(action.ports()));
+    let mut s = format!(
+        "{BOLD}{}{BOLD:#} on {}",
+        action.describe(),
+        ports_label(action.ports())
+    );
     if let Some(e) = entry {
         if let Some(k) = e.kind {
             s.push_str(&format!(" {DIM}·{DIM:#} {KIND}{k}{KIND:#}"));
@@ -303,7 +336,10 @@ fn describe(action: &Action, targets: &[&PortEntry]) -> String {
 }
 
 fn ports_label(ports: &[u16]) -> String {
-    let parts: Vec<String> = ports.iter().map(|p| format!("{PORT}:{p}{PORT:#}")).collect();
+    let parts: Vec<String> = ports
+        .iter()
+        .map(|p| format!("{PORT}:{p}{PORT:#}"))
+        .collect();
     parts.join(" ")
 }
 
@@ -339,8 +375,14 @@ fn wait(port: u16, until_free: bool, timeout: u64) -> Result<ExitCode> {
             return Ok(ExitCode::SUCCESS);
         }
         if deadline.is_some_and(|d| Instant::now() >= d) {
-            let what = if until_free { "to be freed" } else { "for a listener" };
-            output::error(format!("timed out after {timeout}s waiting {what} on :{port}"));
+            let what = if until_free {
+                "to be freed"
+            } else {
+                "for a listener"
+            };
+            output::error(format!(
+                "timed out after {timeout}s waiting {what} on :{port}"
+            ));
             return Ok(ExitCode::FAILURE);
         }
         thread::sleep(Duration::from_millis(200));
@@ -348,7 +390,11 @@ fn wait(port: u16, until_free: bool, timeout: u64) -> Result<ExitCode> {
 }
 
 fn exit(failed: bool) -> ExitCode {
-    if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// Accept `3000`, `:3000`, `localhost:3000`, `http://localhost:3000/`.
@@ -371,7 +417,10 @@ pub fn expand_ports(args: &[String]) -> Result<Vec<u16>> {
         let range = arg.trim().trim_start_matches(':');
         let ports: Vec<u16> = match range.split_once('-') {
             Some((a, b)) if !a.is_empty() && !b.is_empty() => {
-                let (a, b) = (parse_port(a).map_err(anyhow::Error::msg)?, parse_port(b).map_err(anyhow::Error::msg)?);
+                let (a, b) = (
+                    parse_port(a).map_err(anyhow::Error::msg)?,
+                    parse_port(b).map_err(anyhow::Error::msg)?,
+                );
                 if a > b {
                     bail!("`{arg}`: range start is after its end");
                 }
@@ -405,7 +454,10 @@ mod tests {
     #[test]
     fn port_ranges() {
         let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(expand_ports(&args(&["3000-3002", "3001", "8080"])).unwrap(), vec![3000, 3001, 3002, 8080]);
+        assert_eq!(
+            expand_ports(&args(&["3000-3002", "3001", "8080"])).unwrap(),
+            vec![3000, 3001, 3002, 8080]
+        );
         assert_eq!(expand_ports(&args(&[":5173"])).unwrap(), vec![5173]);
         assert!(expand_ports(&args(&["3005-3000"])).is_err());
         assert!(expand_ports(&args(&["1-5000"])).is_err());
@@ -421,7 +473,14 @@ mod tests {
         let cli = Cli::try_parse_from(["porthog", "--all", "--json"]).unwrap();
         assert!(cli.list.all && cli.list.json);
         let cli = Cli::try_parse_from(["porthog", "kill", "3000", ":5173", "-fy"]).unwrap();
-        assert!(matches!(cli.command, Some(Command::Kill(KillArgs { force: true, yes: true, .. }))));
+        assert!(matches!(
+            cli.command,
+            Some(Command::Kill(KillArgs {
+                force: true,
+                yes: true,
+                ..
+            }))
+        ));
         assert!(Cli::try_parse_from(["porthog", "kill"]).is_err());
     }
 }
