@@ -184,6 +184,7 @@ mod tests {
         assert_eq!(width(&truncate_left("日本語のパス", 5)), 5);
     }
 
+    #[cfg(unix)]
     #[test]
     fn command_timeout() {
         assert_eq!(
