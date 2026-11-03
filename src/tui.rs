@@ -5,7 +5,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers,
+};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -51,6 +54,9 @@ struct App {
     status: Option<(String, bool, Instant)>,
     busy: bool,
     quit: bool,
+    /// Quit requested while a kill was running: leave once it reports back.
+    quit_when_done: bool,
+    final_summary: Option<String>,
 }
 
 pub fn run(show_all: bool) -> Result<()> {
@@ -59,9 +65,16 @@ pub fn run(show_all: bool) -> Result<()> {
     thread::spawn(move || worker(req_rx, msg_tx));
 
     let mut terminal = ratatui::init();
+    // With bracketed paste, pasted text arrives as one Paste event instead of
+    // keystrokes, so pasting `y` or a command can't drive the UI.
+    let _ = crossterm::execute!(std::io::stdout(), EnableBracketedPaste);
     let result = event_loop(&mut terminal, show_all, &req_tx, &msg_rx);
+    let _ = crossterm::execute!(std::io::stdout(), DisableBracketedPaste);
     ratatui::restore();
-    result
+    if let Ok(Some(summary)) = &result {
+        eprintln!("{summary}");
+    }
+    result.map(|_| ())
 }
 
 /// Scans (every couple of seconds or on request) and kills off the UI thread
@@ -117,12 +130,14 @@ fn ports_label(ports: &[u16]) -> String {
         .join(" ")
 }
 
+/// Runs until the user quits. Returns the summary of a kill that finished
+/// while quitting, so it can be printed after the screen is restored.
 fn event_loop(
     terminal: &mut DefaultTerminal,
     show_all: bool,
     requests: &Sender<Request>,
     messages: &Receiver<Message>,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let mut app = App {
         entries: Vec::new(),
         loaded: false,
@@ -134,6 +149,8 @@ fn event_loop(
         status: None,
         busy: false,
         quit: false,
+        quit_when_done: false,
+        final_summary: None,
     };
     while !app.quit {
         while let Ok(msg) = messages.try_recv() {
@@ -154,7 +171,7 @@ fn event_loop(
             app.handle_key(key, requests);
         }
     }
-    Ok(())
+    Ok(app.final_summary)
 }
 
 impl App {
@@ -221,6 +238,10 @@ impl App {
             }
             Message::KillDone { summary, ok } => {
                 self.busy = false;
+                if self.quit_when_done {
+                    self.quit = true;
+                    self.final_summary = Some(summary.clone());
+                }
                 self.set_status(summary, ok);
             }
         }
@@ -257,8 +278,10 @@ impl App {
             {
                 self.mode = Mode::Normal;
             }
+            // Only an explicit `y` confirms; anything else (including Enter, so
+            // a command typed into the wrong window can't kill) cancels.
             Mode::Confirm { .. } => match key.code {
-                KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
+                KeyCode::Char('y' | 'Y') => {
                     let Mode::Confirm { actions, force } =
                         std::mem::replace(&mut self.mode, Mode::Normal)
                     else {
@@ -272,16 +295,15 @@ impl App {
                     self.set_status("stopping…", true);
                     let _ = requests.send(Request::Kill(actions, opts));
                 }
-                KeyCode::Char('n' | 'N' | 'q') | KeyCode::Esc => self.mode = Mode::Normal,
-                _ => {}
+                _ => self.mode = Mode::Normal,
             },
             Mode::Normal => match key.code {
-                KeyCode::Char('q') => self.quit = true,
+                KeyCode::Char('q') => self.request_quit(),
                 KeyCode::Esc if !self.filter.is_empty() => {
                     self.filter.clear();
                     self.sync_selection();
                 }
-                KeyCode::Esc => self.quit = true,
+                KeyCode::Esc => self.request_quit(),
                 KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
                 KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
                 KeyCode::PageDown => self.move_selection(10),
@@ -313,6 +335,20 @@ impl App {
                 KeyCode::Char('?') => self.mode = Mode::Help,
                 _ => {}
             },
+        }
+    }
+
+    /// Quit, unless a kill is still running: then wait for it (so SIGKILL
+    /// escalation still happens) unless asked a second time.
+    fn request_quit(&mut self) {
+        if !self.busy || self.quit_when_done {
+            self.quit = true;
+        } else {
+            self.quit_when_done = true;
+            self.set_status(
+                "still stopping; will quit when done (press q again to leave now)",
+                true,
+            );
         }
     }
 
@@ -489,7 +525,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(block, area);
         return;
     };
-    let label = |s: &'static str| Span::styled(format!("{s:<9}"), Style::new().dim());
+    let label = |s: &'static str| Span::styled(format!("{s:<10}"), Style::new().dim());
     let mut lines = vec![Line::from(vec![
         label("command"),
         Span::raw(e.command_line()),
@@ -606,8 +642,8 @@ fn draw_confirm(f: &mut Frame, actions: &[Action], force: bool) {
         Line::from(vec![
             Span::styled("y", Style::new().fg(Color::Green).bold()),
             Span::raw(" yes   "),
-            Span::styled("n", Style::new().fg(Color::Red).bold()),
-            Span::raw(" no"),
+            Span::styled("any other key", Style::new().fg(Color::Red).bold()),
+            Span::raw(" cancels"),
         ])
     } else {
         Line::styled("press any key", Style::new().dim())
