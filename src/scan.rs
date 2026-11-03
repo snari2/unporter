@@ -223,7 +223,7 @@ fn enrich(groups: Vec<Group>) -> Vec<PortEntry> {
                 .or_else(|| {
                     let exe = exe.as_deref()?;
                     let s = exe.to_string_lossy();
-                    (s.contains("/target/debug/") || s.contains("/target/release/"))
+                    kind::is_cargo_target(&s)
                         .then(|| project::detect(exe.parent()?))
                         .flatten()
                 });

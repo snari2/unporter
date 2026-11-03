@@ -8,18 +8,20 @@ use std::collections::HashSet;
 const RULES: &[(&[&str], &str)] = &[
     (&["next-server"], "Next.js"),
     (&["next"], "Next.js"),
-    (&["vite"], "Vite"),
-    (&["react-scripts"], "Create React App"),
-    (&["webpack-dev-server"], "webpack"),
-    (&["webpack", "serve"], "webpack"),
+    // Frameworks that run on top of Vite come before it, so `remix vite:dev`
+    // or `astro dev` isn't reported as plain Vite.
     (&["nuxt"], "Nuxt"),
     (&["nuxi"], "Nuxt"),
     (&["astro"], "Astro"),
     (&["remix"], "Remix"),
     (&["svelte-kit"], "SvelteKit"),
+    (&["storybook"], "Storybook"),
+    (&["vite"], "Vite"),
+    (&["react-scripts"], "Create React App"),
+    (&["webpack-dev-server"], "webpack"),
+    (&["webpack", "serve"], "webpack"),
     (&["ng", "serve"], "Angular"),
     (&["gatsby"], "Gatsby"),
-    (&["storybook"], "Storybook"),
     (&["expo"], "Expo"),
     (&["parcel"], "Parcel"),
     (&["nest", "start"], "NestJS"),
@@ -43,8 +45,13 @@ const RULES: &[(&[&str], &str)] = &[
     (&["artisan", "serve"], "Laravel"),
     (&["hugo"], "Hugo"),
     (&["jekyll"], "Jekyll"),
-    (&["serve"], "serve"),
+    (&["mkdocs"], "MkDocs"),
+    (&["mdbook"], "mdBook"),
 ];
+
+/// Tools whose name is also a common subcommand (`deno serve`, `mkdocs
+/// serve`), so they only match as the program or script being run.
+const SCRIPTS: &[(&str, &str)] = &[("serve", "serve")];
 
 /// Daemons matched on the process name or argv[0] only, so `--db postgres`
 /// in some other program's arguments doesn't count.
@@ -102,6 +109,18 @@ pub fn detect(process_name: &str, cmd: &[String]) -> Option<&'static str> {
             return Some(kind);
         }
     }
+    // argv[1] is the script when argv[0] is an interpreter (`node .../serve`);
+    // a bare word there is a subcommand (`deno serve`).
+    let script = cmd
+        .get(1)
+        .filter(|a| a.contains(['/', '\\']))
+        .map(|a| normalize(basename(a)))
+        .unwrap_or_default();
+    for (bin, kind) in SCRIPTS {
+        if head.iter().chain([&script]).any(|h| h == bin) {
+            return Some(kind);
+        }
+    }
     for (bin, kind) in RUNTIMES {
         if head.iter().any(|h| h == bin || is_versioned(h, bin)) {
             return Some(kind);
@@ -120,7 +139,9 @@ fn is_versioned(head: &str, bin: &str) -> bool {
     })
 }
 
-fn is_cargo_target(path: &str) -> bool {
+/// True for binaries built by Cargo (`.../target/debug/app`), on any OS.
+pub fn is_cargo_target(path: &str) -> bool {
+    let path = path.replace('\\', "/");
     path.contains("/target/debug/") || path.contains("/target/release/")
 }
 
@@ -251,5 +272,43 @@ mod tests {
         assert_eq!(d("nodeweaver", "nodeweaver"), None);
         assert_eq!(d("node", "node app.js --db postgres"), Some("Node.js"));
         assert_eq!(d("hugo", "hugo serve"), Some("Hugo"));
+        assert_eq!(d("deno", "deno serve main.ts"), Some("Deno"));
+        assert_eq!(
+            d("Python", "python3 /venv/bin/mkdocs serve"),
+            Some("MkDocs")
+        );
+        assert_eq!(
+            d("node", "node /app/node_modules/.bin/remix vite:dev"),
+            Some("Remix")
+        );
+        assert_eq!(
+            d("node", "node /app/node_modules/.bin/astro dev"),
+            Some("Astro")
+        );
+    }
+
+    #[test]
+    fn serve_package_still_detected() {
+        assert_eq!(
+            d(
+                "node",
+                "node /usr/local/lib/node_modules/serve/build/main.js -l 3000"
+            ),
+            Some("Node.js")
+        );
+        assert_eq!(
+            d("node", "node /app/node_modules/.bin/serve dist"),
+            Some("serve")
+        );
+        assert_eq!(d("serve", "serve -s build"), Some("serve"));
+    }
+
+    #[test]
+    fn cargo_targets_on_windows() {
+        assert_eq!(
+            d("myapi.exe", r"C:\code\api\target\debug\myapi.exe"),
+            Some("Rust")
+        );
+        assert!(is_cargo_target("/home/me/api/target/release/api"));
     }
 }

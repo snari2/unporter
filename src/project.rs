@@ -82,9 +82,18 @@ fn is_ignored(cwd: &Path, home: Option<&Path>) -> bool {
         "/bin",
         "/sbin",
         "/proc",
-        "/opt/homebrew/Cellar",
+        // Homebrew's prefix is itself a git checkout, so `brew services`
+        // running in /opt/homebrew/var would otherwise look like a project.
+        "/opt/homebrew",
+        "/home/linuxbrew/.linuxbrew",
     ];
     if SYSTEM_PREFIXES.iter().any(|p| cwd.starts_with(p)) {
+        return true;
+    }
+    if let Some(prefix) = std::env::var_os("HOMEBREW_PREFIX")
+        && !prefix.is_empty()
+        && cwd.starts_with(prefix)
+    {
         return true;
     }
     match home {
@@ -96,6 +105,23 @@ fn is_ignored(cwd: &Path, home: Option<&Path>) -> bool {
                 || cwd.starts_with(home.join(".local/share"))
         }
         None => false,
+    }
+}
+
+/// `module github.com/acme/api/v2 // comment` -> `api`.
+fn go_module_name(go_mod: &str) -> Option<String> {
+    let line = go_mod.lines().find_map(|l| {
+        let rest = l.trim().strip_prefix("module")?;
+        rest.starts_with([' ', '\t']).then_some(rest)
+    })?;
+    let path = line.split("//").next()?.trim().trim_matches('"');
+    let mut segments = path.rsplit('/');
+    let last = segments.next()?;
+    let is_major_version =
+        last.len() > 1 && last.starts_with('v') && last[1..].bytes().all(|b| b.is_ascii_digit());
+    match segments.next() {
+        Some(parent) if is_major_version => Some(parent.to_owned()),
+        _ => Some(last.to_owned()),
     }
 }
 
@@ -125,14 +151,7 @@ fn manifest_name(marker: &str, path: &Path) -> Option<String> {
                 .as_str()?
                 .to_owned()
         }
-        "go.mod" => read()?
-            .lines()
-            .find_map(|l| l.trim().strip_prefix("module "))?
-            .trim()
-            .trim_matches('"')
-            .rsplit('/')
-            .next()?
-            .to_owned(),
+        "go.mod" => go_module_name(&read()?)?,
         _ => return None,
     };
     let name = name.trim().to_owned();
@@ -232,8 +251,32 @@ mod tests {
     }
 
     #[test]
+    fn go_module_names() {
+        assert_eq!(
+            go_module_name("module github.com/acme/api/v2\n").as_deref(),
+            Some("api")
+        );
+        assert_eq!(
+            go_module_name("module\tgithub.com/acme/svc // x\n").as_deref(),
+            Some("svc")
+        );
+        assert_eq!(
+            go_module_name("module \"example.com/v2\"\n").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(go_module_name("module v2\n").as_deref(), Some("v2"));
+        assert_eq!(go_module_name("modules foo\n"), None);
+    }
+
+    #[test]
     fn system_dirs_ignored() {
         assert_eq!(detect_with_home(Path::new("/"), None), None);
         assert_eq!(detect_with_home(Path::new("/usr/local/bin"), None), None);
+        assert!(is_ignored(
+            Path::new("/opt/homebrew/var/postgresql@16"),
+            None
+        ));
+        assert!(is_ignored(Path::new("/opt/homebrew"), None));
+        assert!(!is_ignored(Path::new("/opt/homebrew-tools/app"), None));
     }
 }
