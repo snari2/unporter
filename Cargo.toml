@@ -8,6 +8,8 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["port", "kill", "cli", "tui", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
+repository = "https://github.com/snari2/unporter"
+homepage = "https://github.com/snari2/unporter"
 exclude = ["/.github"]
 
 [dependencies]
