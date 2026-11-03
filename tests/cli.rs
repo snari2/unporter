@@ -194,7 +194,8 @@ fn wait_succeeds_for_listener_and_times_out_otherwise() {
 fn bad_arguments_exit_2() {
     assert_eq!(unporter(&["info", "notaport"]).status.code(), Some(2));
     assert_eq!(unporter(&["kill"]).status.code(), Some(2));
-    assert_eq!(unporter(&["kill", "0"]).status.code(), Some(1));
+    assert_eq!(unporter(&["kill", "0"]).status.code(), Some(2));
+    assert_eq!(unporter(&["kill", "3005-3000"]).status.code(), Some(2));
 }
 
 #[test]

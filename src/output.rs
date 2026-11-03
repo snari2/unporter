@@ -230,9 +230,10 @@ pub fn print_details(entries: &[PortEntry]) {
 }
 
 pub fn print_json<T: serde::Serialize + ?Sized>(value: &T) -> anyhow::Result<()> {
+    // Serialize fully before writing so a failure never leaves half a document.
+    let json = serde_json::to_string_pretty(value)?;
     let mut stdout = std::io::stdout().lock();
-    serde_json::to_writer_pretty(&mut stdout, value)?;
-    writeln!(stdout)?;
+    writeln!(stdout, "{json}")?;
     Ok(())
 }
 

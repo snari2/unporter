@@ -12,6 +12,7 @@ pub struct Project {
     /// Name from the manifest, or the directory name as a fallback.
     pub name: String,
     /// Directory containing the marker file.
+    #[serde(serialize_with = "crate::util::serialize_path")]
     pub root: PathBuf,
     /// The marker that identified the project, e.g. `package.json`.
     pub marker: &'static str,

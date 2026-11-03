@@ -134,7 +134,7 @@ Exit codes:
 
 | Command | 0 | 1 |
 | --- | --- | --- |
-| `unporter <port>` / `info` | something is listening | nothing is listening |
+| `unporter <port>` / `info` | something is listening (even if its owner is hidden from you) | nothing is listening |
 | `kill` | every port is free afterwards (including ports that already were) | something couldn't be stopped, or was restarted |
 | `wait` | the condition was met | timed out |
 | `free` | found enough free ports | ran out of ports |

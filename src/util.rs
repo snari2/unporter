@@ -33,6 +33,22 @@ pub fn human_bytes(bytes: u64) -> String {
     }
 }
 
+/// Serialize a path as a string even when it isn't valid UTF-8 (serde's
+/// default errors out mid-document instead).
+pub fn serialize_path<S: serde::Serializer>(path: &Path, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&path.to_string_lossy())
+}
+
+pub fn serialize_opt_path<S: serde::Serializer>(
+    path: &Option<std::path::PathBuf>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    match path {
+        Some(p) => s.serialize_some(&p.to_string_lossy()),
+        None => s.serialize_none(),
+    }
+}
+
 /// Replace the home directory prefix with `~`.
 pub fn tilde(path: &Path) -> String {
     if let Some(home) = dirs::home_dir()
@@ -153,6 +169,20 @@ pub fn open_url(url: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_paths_serialize() {
+        use std::os::unix::ffi::OsStrExt;
+        let p = std::path::PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/caf\xe9"));
+        #[derive(serde::Serialize)]
+        struct W {
+            #[serde(serialize_with = "serialize_opt_path")]
+            p: Option<std::path::PathBuf>,
+        }
+        let json = serde_json::to_string(&W { p: Some(p) }).unwrap();
+        assert_eq!(json, "{\"p\":\"/tmp/caf\u{fffd}\"}");
+    }
 
     #[test]
     fn durations() {

@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::io::IsTerminal;
+use std::ops::RangeInclusive;
 use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -113,8 +114,8 @@ pub struct ListArgs {
 #[derive(Debug, Args)]
 pub struct KillArgs {
     /// Ports to free: `3000`, `:3000`, `localhost:3000` or a range like `3000-3005`
-    #[arg(required = true, num_args = 1..)]
-    pub ports: Vec<String>,
+    #[arg(required = true, num_args = 1.., value_parser = parse_port_spec)]
+    pub ports: Vec<RangeInclusive<u16>>,
     /// Send SIGKILL immediately instead of SIGTERM first
     #[arg(short, long)]
     pub force: bool,
@@ -178,29 +179,31 @@ fn list(args: &ListArgs) -> Result<ExitCode> {
 
 fn info(port: u16, json: bool) -> Result<ExitCode> {
     let entries = scan::scan_port(port)?;
+    // Busy even when the owner is invisible to us (another user's process).
+    let busy = !entries.is_empty() || scan::is_listening(port);
+    let owner_hidden = entries.is_empty() && busy;
     if json {
         output::print_json(&entries)?;
-    } else if entries.is_empty() {
-        if scan::is_listening(port) {
-            println!(
-                "{PORT}:{port}{PORT:#} is in use, but unporter can't see which process owns it \
-                 {DIM}(it probably belongs to another user; try sudo){DIM:#}"
-            );
-        } else {
-            println!("Nothing is listening on {PORT}:{port}{PORT:#}.");
+        if owner_hidden {
+            output::warn(format!(
+                ":{port} is in use, but unporter can't see which process owns it (try sudo)"
+            ));
         }
+    } else if owner_hidden {
+        println!(
+            "{PORT}:{port}{PORT:#} is in use, but unporter can't see which process owns it \
+             {DIM}(it probably belongs to another user; try sudo){DIM:#}"
+        );
+    } else if entries.is_empty() {
+        println!("Nothing is listening on {PORT}:{port}{PORT:#}.");
     } else {
         output::print_details(&entries);
     }
-    Ok(if entries.is_empty() {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(exit(!busy))
 }
 
 fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
-    let ports = expand_ports(&args.ports)?;
+    let ports = expand_ports(&args.ports);
     let entries = scan::scan()?;
     let mut failed = false;
     let mut targets: Vec<&PortEntry> = Vec::new();
@@ -304,7 +307,7 @@ fn kill_ports(args: &KillArgs) -> Result<ExitCode> {
     if !freed.is_empty() {
         thread::sleep(Duration::from_millis(400));
         for port in freed {
-            if scan::is_listening(port) {
+            if scan::is_bound(port) {
                 output::warn(format!(
                     ":{port} is in use again; something restarted it (check pm2, nodemon, launchd or a docker restart policy)"
                 ));
@@ -364,9 +367,12 @@ fn free(from: u16, count: u16) -> Result<ExitCode> {
 
 fn wait(port: u16, until_free: bool, timeout: u64) -> Result<ExitCode> {
     let start = Instant::now();
-    let deadline = (timeout > 0).then(|| start + Duration::from_secs(timeout));
+    // `checked_add` so an absurd timeout means "forever" rather than a panic.
+    let deadline = (timeout > 0)
+        .then(|| start.checked_add(Duration::from_secs(timeout)))
+        .flatten();
     loop {
-        if scan::is_listening(port) != until_free {
+        if scan::is_bound(port) != until_free {
             let what = if until_free { "is free" } else { "is up" };
             eprintln!(
                 "{OK}✔{OK:#} {PORT}:{port}{PORT:#} {what} {DIM}({:.1}s){DIM:#}",
@@ -408,32 +414,40 @@ pub fn parse_port(s: &str) -> Result<u16, String> {
     }
 }
 
-/// Expand port arguments, including ranges like `3000-3005`, in order and
-/// without duplicates.
-pub fn expand_ports(args: &[String]) -> Result<Vec<u16>> {
-    let mut out = Vec::new();
-    let mut seen = HashSet::new();
-    for arg in args {
-        let range = arg.trim().trim_start_matches(':');
-        let ports: Vec<u16> = match range.split_once('-') {
-            Some((a, b)) if !a.is_empty() && !b.is_empty() => {
-                let (a, b) = (
-                    parse_port(a).map_err(anyhow::Error::msg)?,
-                    parse_port(b).map_err(anyhow::Error::msg)?,
-                );
-                if a > b {
-                    bail!("`{arg}`: range start is after its end");
-                }
-                if b - a >= 1000 {
-                    bail!("`{arg}`: ranges are limited to 1000 ports");
-                }
-                (a..=b).collect()
-            }
-            _ => vec![parse_port(arg).map_err(anyhow::Error::msg)?],
-        };
-        out.extend(ports.into_iter().filter(|p| seen.insert(*p)));
+/// One `kill` argument: a port in any form [`parse_port`] accepts, or a
+/// range like `3000-3005` (also `localhost:3000-3005`).
+pub fn parse_port_spec(s: &str) -> Result<RangeInclusive<u16>, String> {
+    let tail = s
+        .trim()
+        .trim_end_matches('/')
+        .rsplit(':')
+        .next()
+        .unwrap_or("");
+    let is_digits = |p: &str| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit());
+    if let Some((a, b)) = tail.split_once('-')
+        && is_digits(a)
+        && is_digits(b)
+    {
+        let (a, b) = (parse_port(a)?, parse_port(b)?);
+        if a > b {
+            return Err(format!("`{s}`: range start is after its end"));
+        }
+        if b - a >= 1000 {
+            return Err(format!("`{s}`: ranges are limited to 1000 ports"));
+        }
+        return Ok(a..=b);
     }
-    Ok(out)
+    parse_port(s).map(|p| p..=p)
+}
+
+/// Flatten port ranges in order, without duplicates.
+pub fn expand_ports(specs: &[RangeInclusive<u16>]) -> Vec<u16> {
+    let mut seen = HashSet::new();
+    specs
+        .iter()
+        .flat_map(|r| r.clone())
+        .filter(|p| seen.insert(*p))
+        .collect()
 }
 
 #[cfg(test)]
@@ -453,15 +467,24 @@ mod tests {
 
     #[test]
     fn port_ranges() {
-        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let specs = |v: &[&str]| -> Result<Vec<_>, String> {
+            v.iter().map(|s| parse_port_spec(s)).collect()
+        };
         assert_eq!(
-            expand_ports(&args(&["3000-3002", "3001", "8080"])).unwrap(),
+            expand_ports(&specs(&["3000-3002", "3001", "8080"]).unwrap()),
             vec![3000, 3001, 3002, 8080]
         );
-        assert_eq!(expand_ports(&args(&[":5173"])).unwrap(), vec![5173]);
-        assert!(expand_ports(&args(&["3005-3000"])).is_err());
-        assert!(expand_ports(&args(&["1-5000"])).is_err());
-        assert!(expand_ports(&args(&["nope"])).is_err());
+        assert_eq!(expand_ports(&specs(&[":5173"]).unwrap()), vec![5173]);
+        assert_eq!(parse_port_spec("localhost:3000-3002"), Ok(3000..=3002));
+        assert_eq!(parse_port_spec("my-host:3000"), Ok(3000..=3000));
+        assert_eq!(
+            parse_port_spec("http://dev-box.local:8080/"),
+            Ok(8080..=8080)
+        );
+        assert!(parse_port_spec("3005-3000").is_err());
+        assert!(parse_port_spec("1-5000").is_err());
+        assert!(parse_port_spec("nope").is_err());
+        assert!(parse_port_spec("0").is_err());
     }
 
     #[test]

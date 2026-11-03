@@ -22,7 +22,9 @@ pub struct PortEntry {
     pub pid: u32,
     pub process: String,
     pub command: Vec<String>,
+    #[serde(serialize_with = "util::serialize_opt_path")]
     pub exe: Option<PathBuf>,
+    #[serde(serialize_with = "util::serialize_opt_path")]
     pub cwd: Option<PathBuf>,
     pub project: Option<Project>,
     /// Framework or server guess, e.g. `Next.js`, `Flask`, `PostgreSQL`.
@@ -383,6 +385,12 @@ pub fn is_listening(port: u16) -> bool {
     ]
     .into_iter()
     .any(|ip| TcpStream::connect_timeout(&SocketAddr::new(ip, port), timeout).is_ok())
+}
+
+/// True if anything holds `port`: localhost accepts connections, or a visible
+/// socket listens on it (including one bound to a single LAN address).
+pub fn is_bound(port: u16) -> bool {
+    is_listening(port) || raw_listeners().is_ok_and(|all| all.iter().any(|l| l.port == port))
 }
 
 /// True if a dev server could bind `port` on localhost right now.
