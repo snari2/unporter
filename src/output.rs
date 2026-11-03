@@ -20,7 +20,7 @@ pub const ERR: Style = AnsiColor::Red.on_default().bold();
 /// Project label for an entry: project name, Docker container, or `-`.
 pub fn project_label(e: &PortEntry) -> String {
     if let Some(c) = &e.container {
-        format!("{c} (docker)")
+        format!("{c} ({})", e.container_runtime().unwrap_or("docker"))
     } else if let Some(p) = &e.project {
         p.name.clone()
     } else {
@@ -189,7 +189,10 @@ pub fn print_details(entries: &[PortEntry]) {
         if let Some(c) = &e.container {
             row(
                 "container",
-                format!("{PROJECT}{c}{PROJECT:#} {DIM}(docker stop {c}){DIM:#}"),
+                format!(
+                    "{PROJECT}{c}{PROJECT:#} {DIM}({} stop {c}){DIM:#}",
+                    e.container_runtime().unwrap_or("docker")
+                ),
             );
         }
         if let Some(p) = &e.project {

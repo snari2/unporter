@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
 use serde::Serialize;
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind, Users};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, Uid, UpdateKind, Users};
 
 use crate::{kind, project, project::Project, util};
 
@@ -27,8 +27,11 @@ pub struct PortEntry {
     pub project: Option<Project>,
     /// Framework or server guess, e.g. `Next.js`, `Flask`, `PostgreSQL`.
     pub kind: Option<&'static str>,
-    /// Docker container publishing this port, when Docker owns the socket.
+    /// Container publishing this port, when Docker or Podman owns the socket.
     pub container: Option<String>,
+    /// True when the socket belongs to a container runtime but asking it which
+    /// container publishes the port failed or timed out.
+    pub container_lookup_failed: bool,
     pub parent_pid: Option<u32>,
     pub parent_command: Option<String>,
     /// Process start time in seconds since the Unix epoch.
@@ -36,7 +39,7 @@ pub struct PortEntry {
     pub uptime_secs: Option<u64>,
     pub memory_bytes: Option<u64>,
     pub user: Option<String>,
-    /// Owned by the user running unporter.
+    /// Owned by the user running unporter (the invoking user under `sudo`).
     pub mine: bool,
     /// Looks like a development server rather than a system service or
     /// desktop app. `unporter list` hides the rest unless `--all` is given.
@@ -48,8 +51,15 @@ impl PortEntry {
         format!("http://localhost:{}", self.port)
     }
 
-    pub fn is_docker(&self) -> bool {
-        self.container.is_some() || self.kind == Some("Docker")
+    /// The container CLI (`docker` or `podman`) when a container runtime owns
+    /// this socket. Such processes are stopped via the runtime, never killed.
+    pub fn container_runtime(&self) -> Option<&'static str> {
+        match self.kind {
+            Some("Podman") => Some("podman"),
+            Some("Docker") => Some("docker"),
+            _ if self.container.is_some() => Some("docker"),
+            _ => None,
+        }
     }
 
     /// `localhost`, `*` (all interfaces) or the specific addresses.
@@ -190,7 +200,10 @@ fn enrich(groups: Vec<Group>) -> Vec<PortEntry> {
             .with_user(UpdateKind::Always),
     );
 
-    let my_uid = my_pid.and_then(|p| sys.process(p)?.user_id().cloned());
+    let my_uid = invoking_uid(
+        my_pid.and_then(|p| sys.process(p)?.user_id().cloned()),
+        std::env::var("SUDO_UID").ok(),
+    );
     let users = Users::new_with_refreshed_list();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -255,6 +268,7 @@ fn enrich(groups: Vec<Group>) -> Vec<PortEntry> {
                 project,
                 kind,
                 container: None,
+                container_lookup_failed: false,
                 parent_pid: parent_pid.map(|p| p.as_u32()),
                 parent_command,
                 start_time,
@@ -268,34 +282,64 @@ fn enrich(groups: Vec<Group>) -> Vec<PortEntry> {
         })
         .collect();
 
-    if entries.iter().any(PortEntry::is_docker) {
-        let containers = docker_containers();
-        for e in entries.iter_mut().filter(|e| e.is_docker()) {
-            e.container = containers.get(&e.port).cloned();
+    for runtime in ["docker", "podman"] {
+        if !entries
+            .iter()
+            .any(|e| e.container_runtime() == Some(runtime))
+        {
+            continue;
+        }
+        let containers = containers(runtime);
+        for e in entries
+            .iter_mut()
+            .filter(|e| e.container_runtime() == Some(runtime))
+        {
+            e.container = containers.as_ref().and_then(|c| c.get(&e.port).cloned());
+            e.container_lookup_failed = containers.is_none();
             e.dev = true;
         }
     }
     entries
 }
 
-/// When `docker ps` last failed or hung. A wedged Docker daemon would
-/// otherwise stall every refresh of the TUI.
-static DOCKER_FAILED_AT: Mutex<Option<Instant>> = Mutex::new(None);
-const DOCKER_TIMEOUT: Duration = Duration::from_millis(800);
-const DOCKER_BACKOFF: Duration = Duration::from_secs(30);
+/// Under `sudo`, compare ownership against the user who ran sudo rather than
+/// root, so root's own services aren't mistaken for the user's dev servers.
+fn invoking_uid(uid: Option<Uid>, sudo_uid: Option<String>) -> Option<Uid> {
+    let root: Option<Uid> = "0".parse().ok();
+    if uid.is_some()
+        && uid == root
+        && let Some(sudo_uid) = sudo_uid.and_then(|s| s.parse().ok())
+    {
+        return Some(sudo_uid);
+    }
+    uid
+}
 
-/// Host port -> container name for running Docker containers.
-fn docker_containers() -> HashMap<u16, String> {
-    let mut failed_at = DOCKER_FAILED_AT.lock().unwrap_or_else(|e| e.into_inner());
-    if failed_at.is_some_and(|t| t.elapsed() < DOCKER_BACKOFF) {
-        return HashMap::new();
+/// When each container CLI last failed or hung. A wedged daemon would
+/// otherwise stall every refresh of the TUI.
+static LOOKUP_FAILED_AT: Mutex<Vec<(&'static str, Instant)>> = Mutex::new(Vec::new());
+const CONTAINER_TIMEOUT: Duration = Duration::from_millis(800);
+const CONTAINER_BACKOFF: Duration = Duration::from_secs(30);
+
+/// Host port -> container name for `runtime` (`docker` or `podman`), or
+/// `None` if the runtime couldn't be asked.
+fn containers(runtime: &'static str) -> Option<HashMap<u16, String>> {
+    let mut failures = LOOKUP_FAILED_AT.lock().unwrap_or_else(|e| e.into_inner());
+    if failures
+        .iter()
+        .any(|(r, t)| *r == runtime && t.elapsed() < CONTAINER_BACKOFF)
+    {
+        return None;
     }
     let out = util::output_with_timeout(
-        Command::new("docker").args(["ps", "--format", "{{.Names}}\t{{.Ports}}"]),
-        DOCKER_TIMEOUT,
+        Command::new(runtime).args(["ps", "--format", "{{.Names}}\t{{.Ports}}"]),
+        CONTAINER_TIMEOUT,
     );
-    *failed_at = out.is_none().then(Instant::now);
-    out.map(|o| parse_docker_ps(&o)).unwrap_or_default()
+    failures.retain(|(r, _)| *r != runtime);
+    if out.is_none() {
+        failures.push((runtime, Instant::now()));
+    }
+    out.map(|o| parse_docker_ps(&o))
 }
 
 /// Parse `docker ps --format '{{.Names}}\t{{.Ports}}'` output, e.g.
@@ -419,6 +463,7 @@ mod tests {
             project: None,
             kind: None,
             container: None,
+            container_lookup_failed: false,
             parent_pid: None,
             parent_command: None,
             start_time: None,
@@ -428,6 +473,25 @@ mod tests {
             mine: true,
             dev: true,
         }
+    }
+
+    #[test]
+    fn sudo_compares_against_the_invoking_user() {
+        let uid = |s: &str| s.parse::<Uid>().ok();
+        assert_eq!(invoking_uid(uid("0"), Some("501".into())), uid("501"));
+        assert_eq!(invoking_uid(uid("0"), None), uid("0"));
+        assert_eq!(invoking_uid(uid("0"), Some("junk".into())), uid("0"));
+        assert_eq!(invoking_uid(uid("501"), Some("1000".into())), uid("501"));
+    }
+
+    #[test]
+    fn container_runtimes() {
+        let mut e = entry(&["0.0.0.0"]);
+        assert_eq!(e.container_runtime(), None);
+        e.kind = Some("Podman");
+        assert_eq!(e.container_runtime(), Some("podman"));
+        e.kind = Some("Docker");
+        assert_eq!(e.container_runtime(), Some("docker"));
     }
 
     #[test]

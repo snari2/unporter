@@ -20,7 +20,9 @@ pub enum Action {
         name: String,
         ports: Vec<u16>,
     },
-    DockerStop {
+    /// `docker stop` / `podman stop` the container publishing the ports.
+    ContainerStop {
+        runtime: &'static str,
         container: String,
         ports: Vec<u16>,
     },
@@ -34,7 +36,7 @@ impl Action {
     pub fn ports(&self) -> &[u16] {
         match self {
             Action::Signal { ports, .. }
-            | Action::DockerStop { ports, .. }
+            | Action::ContainerStop { ports, .. }
             | Action::Skip { ports, .. } => ports,
         }
     }
@@ -43,7 +45,9 @@ impl Action {
     pub fn describe(&self) -> String {
         match self {
             Action::Signal { pid, name, .. } => format!("{name} (pid {pid})"),
-            Action::DockerStop { container, .. } => format!("docker container {container}"),
+            Action::ContainerStop {
+                runtime, container, ..
+            } => format!("{runtime} container {container}"),
             Action::Skip { reason, .. } => reason.clone(),
         }
     }
@@ -74,7 +78,7 @@ pub enum Outcome {
     Killed,
     /// Already gone by the time we got to it.
     Gone,
-    /// `docker stop` succeeded.
+    /// `docker stop` / `podman stop` succeeded.
     Stopped,
     Skipped(String),
     Failed(String),
@@ -90,21 +94,31 @@ impl Outcome {
 }
 
 /// Decide what to do for each entry. One action per process (a process on
-/// several ports is signalled once) and one per Docker container.
+/// several ports is signalled once) and one per container. Container
+/// runtimes themselves (Docker Desktop, Podman's gvproxy) are never killed.
 pub fn plan<'a>(entries: impl IntoIterator<Item = &'a PortEntry>) -> Vec<Action> {
     let me = std::process::id();
     let mut procs: BTreeMap<u32, Action> = BTreeMap::new();
-    let mut containers: BTreeMap<String, Vec<u16>> = BTreeMap::new();
+    let mut containers: BTreeMap<(&'static str, String), Vec<u16>> = BTreeMap::new();
     let mut skips = Vec::new();
 
     for e in entries {
-        if e.is_docker() {
+        if let Some(runtime) = e.container_runtime() {
             match &e.container {
-                Some(c) => push_port(containers.entry(c.clone()).or_default(), e.port),
+                Some(c) => push_port(containers.entry((runtime, c.clone())).or_default(), e.port),
+                None if e.container_lookup_failed => skips.push(Action::Skip {
+                    reason: format!(
+                        ":{} belongs to {runtime} ({}), but `{runtime} ps` didn't answer, so \
+                         unporter can't tell which container publishes it; stop it with \
+                         `{runtime} stop <container>`",
+                        e.port, e.process
+                    ),
+                    ports: vec![e.port],
+                }),
                 None => skips.push(Action::Skip {
                     reason: format!(
-                        ":{} is published by Docker ({}), but no running container maps it; \
-                         stop it with `docker ps` / `docker stop` instead of killing Docker itself",
+                        ":{} is held by {runtime} ({}) but no running container publishes it; \
+                         unporter won't kill the container engine itself",
                         e.port, e.process
                     ),
                     ports: vec![e.port],
@@ -134,11 +148,13 @@ pub fn plan<'a>(entries: impl IntoIterator<Item = &'a PortEntry>) -> Vec<Action>
     }
 
     let mut actions: Vec<Action> = procs.into_values().collect();
-    actions.extend(
-        containers
-            .into_iter()
-            .map(|(container, ports)| Action::DockerStop { container, ports }),
-    );
+    actions.extend(containers.into_iter().map(|((runtime, container), ports)| {
+        Action::ContainerStop {
+            runtime,
+            container,
+            ports,
+        }
+    }));
     actions.extend(skips);
     actions
 }
@@ -155,18 +171,20 @@ pub fn execute(action: &Action, opts: KillOptions) -> Outcome {
         Action::Signal {
             pid, start_time, ..
         } => signal_process(*pid, *start_time, opts),
-        Action::DockerStop { container, .. } => docker_stop(container),
+        Action::ContainerStop {
+            runtime, container, ..
+        } => container_stop(runtime, container),
         Action::Skip { reason, .. } => Outcome::Skipped(reason.clone()),
     }
 }
 
-fn docker_stop(container: &str) -> Outcome {
+fn container_stop(runtime: &str, container: &str) -> Outcome {
     match util::output_with_timeout(
-        Command::new("docker").args(["stop", container]),
+        Command::new(runtime).args(["stop", container]),
         Duration::from_secs(30),
     ) {
         Some(_) => Outcome::Stopped,
-        None => Outcome::Failed(format!("`docker stop {container}` failed or timed out")),
+        None => Outcome::Failed(format!("`{runtime} stop {container}` failed or timed out")),
     }
 }
 
@@ -198,12 +216,13 @@ fn state(sys: &mut System, pid: u32, start_time: Option<u64>) -> State {
 }
 
 fn wait_for_exit(sys: &mut System, pid: u32, start_time: Option<u64>, timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
+    // A huge --timeout would overflow Instant; treat it as "wait forever".
+    let deadline = Instant::now().checked_add(timeout);
     loop {
         if state(sys, pid, start_time) != State::Running {
             return true;
         }
-        if Instant::now() >= deadline {
+        if deadline.is_some_and(|d| Instant::now() >= d) {
             return false;
         }
         thread::sleep(Duration::from_millis(50));
@@ -264,8 +283,16 @@ fn send(_sys: &System, pid: u32, sig: Sig) -> Result<(), Outcome> {
     let Ok(raw) = i32::try_from(pid) else {
         return Err(Outcome::Failed(format!("invalid pid {pid}")));
     };
-    match kill(nix::unistd::Pid::from_raw(raw), signal) {
-        Ok(()) => Ok(()),
+    let target = nix::unistd::Pid::from_raw(raw);
+    match kill(target, signal) {
+        Ok(()) => {
+            // A suspended (Ctrl-Z) process can't act on SIGTERM until it is
+            // continued, which is what shells do for `kill %job` too.
+            if matches!(sig, Sig::Term) {
+                let _ = kill(target, Signal::SIGCONT);
+            }
+            Ok(())
+        }
         Err(Errno::ESRCH) => Err(Outcome::Gone),
         Err(Errno::EPERM) => Err(Outcome::Failed(format!(
             "permission denied: pid {pid} belongs to another user (try again with sudo)"
@@ -302,6 +329,7 @@ mod tests {
             project: None,
             kind: None,
             container: None,
+            container_lookup_failed: false,
             parent_pid: None,
             parent_command: None,
             start_time: Some(100),
@@ -340,10 +368,33 @@ mod tests {
         );
         assert!(matches!(&actions[1], Action::Signal { pid: 43, .. }));
         assert!(
-            matches!(&actions[2], Action::DockerStop { container, ports } if container == "pg" && ports == &[5432, 5433])
+            matches!(&actions[2], Action::ContainerStop { runtime: "docker", container, ports } if container == "pg" && ports == &[5432, 5433])
         );
         assert!(matches!(&actions[3], Action::Skip { ports, .. } if ports == &[9999]));
         assert!(matches!(&actions[4], Action::Skip { ports, .. } if ports == &[80]));
+    }
+
+    #[test]
+    fn container_runtimes_are_never_signalled() {
+        let mut gvproxy = entry(8080, 700);
+        gvproxy.process = "gvproxy".into();
+        gvproxy.kind = Some("Podman");
+        let actions = plan(&[gvproxy.clone()]);
+        assert!(
+            matches!(&actions[0], Action::Skip { reason, .. } if reason.contains("won't kill"))
+        );
+
+        gvproxy.container_lookup_failed = true;
+        let actions = plan(&[gvproxy.clone()]);
+        assert!(
+            matches!(&actions[0], Action::Skip { reason, .. } if reason.contains("`podman ps` didn't answer"))
+        );
+
+        gvproxy.container = Some("web".into());
+        let actions = plan(&[gvproxy]);
+        assert!(
+            matches!(&actions[0], Action::ContainerStop { runtime: "podman", container, .. } if container == "web")
+        );
     }
 
     #[test]
@@ -384,6 +435,30 @@ mod tests {
         };
         assert_eq!(signal_process(pid, None, opts), Outcome::Killed);
         reaper.join().unwrap().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stops_a_suspended_process_with_sigterm() {
+        use nix::sys::signal::{Signal, kill};
+        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = child.id();
+        kill(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGSTOP).unwrap();
+        thread::sleep(Duration::from_millis(100));
+        let reaper = thread::spawn(move || child.wait());
+        let opts = KillOptions {
+            force: false,
+            timeout: Duration::from_secs(2),
+        };
+        assert_eq!(signal_process(pid, None, opts), Outcome::Exited);
+        reaper.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn huge_timeouts_do_not_overflow() {
+        let mut sys = System::new();
+        // The pid is gone, so this returns immediately instead of panicking.
+        assert!(wait_for_exit(&mut sys, u32::MAX - 1, None, Duration::MAX));
     }
 
     #[test]
