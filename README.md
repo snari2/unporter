@@ -3,7 +3,7 @@
 [![CI](https://github.com/snari2/unporter/actions/workflows/ci.yml/badge.svg)](https://github.com/snari2/unporter/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-**Find and kill whatever is hogging your dev ports.**
+**its annoying to not know whats running on what port**
 
 `Error: listen EADDRINUSE: address already in use :::3000`. Which terminal tab
 was that again? `unporter` tells you what's on every port: the process, the
