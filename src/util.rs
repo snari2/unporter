@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn truncation() {
-        assert_eq!(truncate_left("~/code/shop/client", 10), "…pp/client");
+        assert_eq!(truncate_left("~/code/shop/client", 10), "…op/client");
         assert_eq!(truncate_left("abcdef", 4), "…def");
         assert_eq!(truncate_left("abc", 4), "abc");
         assert_eq!(truncate_right("abcdef", 4), "abc…");

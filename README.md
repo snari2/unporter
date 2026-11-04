@@ -12,11 +12,11 @@ Then it stops it cleanly.
 
 ```console
 $ unporter
-PORT  PID    PROCESS             KIND     PROJECT         PATH                   BIND       UPTIME  MEM
-3000  48211  node                Next.js  acme-web  ~/code/acme-web       *          2h 13m  182.4 MB
-5001  48502  Python              Flask    inventory-api   ~/code/inventory-api  localhost  12m     58.3 MB
-5173  48390  node                Vite     client          ~/code/dashboard/client      localhost  41m     96.0 MB
-5432  4371   com.docker.backend  Docker   pg (docker)     -                      *          3d 2h   76.9 MB
+PORT  PID    PROCESS             KIND     PROJECT        PATH                     BIND       UPTIME  MEM
+3000  48211  node                Next.js  acme-web       ~/code/acme-web          *          2h 13m  182.4 MB
+5001  48502  Python              Flask    inventory-api  ~/code/inventory-api     localhost  12m     58.3 MB
+5173  48390  node                Vite     client         ~/code/dashboard/client  localhost  41m     96.0 MB
+5432  4371   com.docker.backend  Docker   pg (docker)    -                        *          3d 2h   76.9 MB
 9 other listeners hidden (system services and apps); use --all to show
 
 $ unporter kill 3000
