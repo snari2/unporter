@@ -7,8 +7,8 @@
 
 `Error: listen EADDRINUSE: address already in use :::3000`. Which terminal tab
 was that again? `unporter` tells you what's on every port: the process, the
-framework, **the project it was started from**, how long it's been running.
-Then it stops it cleanly.
+framework, the project it was started from, and how long it's been running. It
+can also stop it cleanly.
 
 ```console
 $ unporter
@@ -26,27 +26,27 @@ $ unporter kill 3000
 
 ## Features
 
-- **Project-aware.** Walks up from each process's working directory to the
-  nearest `package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `Gemfile`,
-  `.git`, ... and shows the project's real name.
-- **Knows your stack.** Recognises Next.js, Vite, Create React App, Nuxt, Astro,
-  Angular, webpack, nodemon, Flask, Django, FastAPI/Uvicorn, Rails, Laravel,
-  Postgres, Redis, MongoDB, Docker and more, falling back to the runtime
-  (Node.js, Python, Bun, Deno, Rust...).
-- **Hides the noise.** AirPlay, Spotify, Tailscale and friends are hidden
-  unless you pass `--all`.
-- **Kills politely.** SIGTERM first, SIGKILL only if the process is still
-  there after 3 seconds. It checks the pid wasn't reused before signalling.
-- **Docker-aware.** Ports published by containers are stopped with
-  `docker stop <container>` rather than by killing Docker itself.
-- **Safe by default.** Dev servers you own are stopped straight away. Anything
-  else (system services, other users' processes) needs confirmation or `--yes`.
-- **Live TUI.** `unporter tui` gives a refreshing table with filter, kill,
-  force kill and open-in-browser.
-- **Scriptable.** `--json` output, meaningful exit codes, `wait` and `free`
-  subcommands.
-- One small binary with no runtime dependencies. macOS and Linux, plus
-  best-effort Windows support.
+- Shows which project each server belongs to. It walks up from the process's
+  working directory to the nearest `package.json`, `Cargo.toml`,
+  `pyproject.toml`, `go.mod`, `Gemfile` or `.git` and uses the name inside.
+- Recognises Next.js, Vite, Create React App, Nuxt, Astro, Angular, webpack,
+  nodemon, Flask, Django, FastAPI/Uvicorn, Rails, Laravel, Postgres, Redis,
+  MongoDB, Docker and more. When nothing specific matches, it names the
+  runtime (Node.js, Python, Bun, Deno, Rust).
+- Hides AirPlay, Spotify, Tailscale and friends unless you pass `--all`.
+- Sends SIGTERM first and SIGKILL only if the process is still running 3
+  seconds later. Before signalling, it checks the pid hasn't been reused by
+  another process.
+- Stops containers with `docker stop` or `podman stop` instead of killing
+  Docker or Podman itself.
+- Kills dev servers you own without asking. For anything else, such as system
+  services or other users' processes, it asks first unless you pass `--yes`.
+- `unporter tui` opens a live table where you can filter, kill, force kill, or
+  open a port in your browser.
+- For scripts: `--json` output, the exit codes listed below, and the `wait`
+  and `free` subcommands.
+- Ships as one small binary with no runtime dependencies. Runs on macOS and
+  Linux, with best-effort Windows support.
 
 ## Install
 
@@ -139,12 +139,12 @@ Exit codes:
 | `wait` | the condition was met | timed out |
 | `free` | found enough free ports | ran out of ports |
 
-Invalid arguments exit with 2. Colour follows the terminal and respects
-[`NO_COLOR`](https://no-color.org) and `CLICOLOR_FORCE`.
+Invalid arguments exit with 2. Output is coloured only when it goes to a
+terminal, and respects [`NO_COLOR`](https://no-color.org) and `CLICOLOR_FORCE`.
 
 ## How it decides what's a "dev server"
 
-A listener is shown by default when any of these hold:
+A listener is shown by default when any of these is true:
 
 1. its working directory is inside a project (a directory with one of the
    marker files above, but never your home directory itself or `~/Library`),
